@@ -153,5 +153,5 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-//TODO: Setup GHA to update this automatically
+//Run `make update-stratus` to update this automatically
 replace github.com/datadog/stratus-red-team/v2 => github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250328193115-a4645eefb9ec
