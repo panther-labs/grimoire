@@ -1,0 +1,60 @@
+name: Update Stratus Red Team
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch-name:
+        description: 'Name of the branch to create for the PR'
+        required: false
+        default: 'update-stratus-red-team'
+
+jobs:
+  update-stratus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Update Stratus Red Team
+        run: make update-stratus
+
+      - name: Check for changes in go.mod
+        id: check-changes
+        run: |
+          if [[ -n "$(git status --porcelain go.mod)" ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.check-changes.outputs.changes == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Set Git user
+          git config user.name "panther-bot-automation"
+          git config user.email "github-service-account-automation@panther.io"
+          
+          # Create branch
+          BRANCH_NAME="${{ github.event.inputs.branch-name }}"
+          git checkout -b $BRANCH_NAME
+          
+          # Commit changes
+          git add go.mod go.sum
+          git commit -m "Update Stratus Red Team to latest version"
+          
+          # Push branch
+          git push origin $BRANCH_NAME
+          
+          # Create PR
+          gh pr create \
+            --title "Update Stratus Red Team to latest version" \
+            --body "This PR updates the Stratus Red Team dependency to the latest version from panther-labs/stratus-red-team repository." \
+            --base main \
+            --head $BRANCH_NAME
