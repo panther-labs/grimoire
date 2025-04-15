@@ -4,30 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/datadog/grimoire/pkg/grimoire/detonators"
-	"github.com/datadog/grimoire/pkg/grimoire/logs"
-	utils "github.com/datadog/grimoire/pkg/grimoire/utils"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/datadog/grimoire/pkg/grimoire/detonators"
+	"github.com/datadog/grimoire/pkg/grimoire/logs"
+	utils "github.com/datadog/grimoire/pkg/grimoire/utils"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 type ShellCommand struct {
-	OutputFile   string
 	CommandToRun string
 	ScriptToRun  string
 }
 
 func NewShellCommand() *cobra.Command {
-	var outputFile string
 	var commandToRun string
 	var scriptToRun string
 
@@ -37,11 +32,13 @@ func NewShellCommand() *cobra.Command {
 		Example:      "Run an interactive shell. Grimoire will inject a unique identifier to your HTTP user agent when using the AWS CLI.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			command := ShellCommand{
-				OutputFile:   outputFile,
 				CommandToRun: commandToRun,
 				ScriptToRun:  scriptToRun,
 			}
 			if err := command.Validate(); err != nil {
+				return err
+			}
+			if err := ValidateFlags(); err != nil {
 				return err
 			}
 			return command.Do()
@@ -49,7 +46,6 @@ func NewShellCommand() *cobra.Command {
 	}
 
 	initLookupFlags(shellCmd)
-	shellCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file to write CloudTrail events to. Grimoire will overwrite the file if it exists, and create otherwise.")
 	shellCmd.Flags().StringVarP(&commandToRun, "command", "c", "", "Command to execute in the shell (instead of running an interactive shell)")
 	shellCmd.Flags().StringVarP(&scriptToRun, "script", "", "", "Path to a script to execute in the shell (instead of running an interactive shell)")
 
@@ -62,6 +58,7 @@ func (m *ShellCommand) Validate() error {
 	}
 	return nil
 }
+
 func (m *ShellCommand) Do() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigChan := make(chan os.Signal, 1)
@@ -77,15 +74,7 @@ func (m *ShellCommand) Do() error {
 		}
 	}()
 
-	if err := utils.CreateOrTruncateJSONFile(m.OutputFile); err != nil {
-		return err
-	}
-
 	detonationUuid := utils.NewDetonationID()
-	awsConfig, _ := config.LoadDefaultConfig(context.Background())
-
-	// Ensure that the user is already authenticated to AWS
-	m.ensureAuthenticatedToAws(awsConfig)
 
 	if m.isInteractiveMode() {
 		log.Info("Grimoire will now run your shell and automatically inject a unique identifier to your HTTP user agent when using the AWS CLI")
@@ -123,55 +112,15 @@ func (m *ShellCommand) Do() error {
 		log.Infof("Welcome back to Grimoire!")
 	}
 
-	cloudtrailLogs := &logs.CloudTrailEventsFinder{
-		CloudtrailClient: cloudtrail.NewFromConfig(awsConfig),
-		Options: &logs.CloudTrailEventLookupOptions{
-			Timeout:            timeout,
-			LookupInterval:     lookupInterval,
-			IncludeEvents:      includeEvents,
-			ExcludeEvents:      excludeEvents,
-			MaxEvents:          maxEvents,
-			WriteEventsOnly:    writeEventsOnly,
-			ExtendTimeWindow:   extendSearchWindow,
-			UserAgentMatchType: logs.UserAgentMatchTypePartial,
-		},
-	}
-
+	// Create a DetonationInfo object
 	detonationInfo := &detonators.DetonationInfo{
 		DetonationID: detonationUuid,
 		StartTime:    startTime,
 		EndTime:      endTime,
 	}
 
-	log.Info("Searching for CloudTrail events...")
-	eventsChannel, err := cloudtrailLogs.FindLogs(context.Background(), detonationInfo)
-	if err != nil {
-		return fmt.Errorf("unable to search for CloudTrail events: %v", err)
-	}
-
-	for evt := range eventsChannel {
-		if evt.Error != nil {
-			log.Errorf("Error while searching for CloudTrail events: %v", evt.Error)
-			os.Exit(1)
-		}
-
-		log.Infof("Found event: %s", utils.GetCloudTrailEventFullName(evt.CloudTrailEvent))
-		if err := utils.AppendToJsonFileArray(m.OutputFile, *evt.CloudTrailEvent); err != nil {
-			log.Errorf("unable to append CloudTrail event to output file: %v", err)
-		}
-	}
-
-	return nil
-}
-
-func (m *ShellCommand) ensureAuthenticatedToAws(awsConfig aws.Config) {
-	log.Debug("Checking AWS authentication using sts:GetCallerIdentity")
-	stsClient := sts.NewFromConfig(awsConfig)
-	_, err := stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
-	if err != nil {
-		log.Errorf("It looks like you are not authenticated to AWS. Please authenticate before running Grimoire.")
-		os.Exit(1)
-	}
+	// Process logs using the shared function
+	return FindLogsForDetonation(context.Background(), detonationInfo, "shell", "", logs.UserAgentMatchTypePartial, nil)
 }
 
 func (m *ShellCommand) isExecutionError(err error) bool {
