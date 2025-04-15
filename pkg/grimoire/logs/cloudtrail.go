@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/datadog/grimoire/pkg/grimoire/detonators"
 	grimoire "github.com/datadog/grimoire/pkg/grimoire/utils"
 	log "github.com/sirupsen/logrus"
-	"strings"
-	"time"
 )
 
 type UserAgentMatchType int
@@ -58,21 +59,18 @@ type CloudTrailEventLookupOptions struct {
 	ExtendTimeWindow time.Duration
 }
 
-type CloudTrailResult struct {
-	CloudTrailEvent *map[string]interface{}
-	Error           error
-}
-
-func (m *CloudTrailEventsFinder) FindLogs(ctx context.Context, detonation *detonators.DetonationInfo) (chan *CloudTrailResult, error) {
+func (m *CloudTrailEventsFinder) FindLogs(ctx context.Context, detonation *detonators.DetonationInfo) (chan *LogEvent, chan *PantherAlert, error) {
 	if len(m.Options.IncludeEvents) > 0 && len(m.Options.ExcludeEvents) > 0 {
-		return nil, errors.New("only zero or one of IncludeEvents and ExcludeEvents can be specified")
+		return nil, nil, errors.New("only zero or one of IncludeEvents and ExcludeEvents can be specified")
 	}
-	return m.findEventsWithCloudTrail(ctx, detonation)
+	events, err := m.findEventsWithCloudTrail(ctx, detonation)
+	// CloudTrail doesn't support alerts, so return nil channel for alerts
+	return events, nil, err
 }
 
-func (m *CloudTrailEventsFinder) findEventsWithCloudTrail(ctx context.Context, detonation *detonators.DetonationInfo) (chan *CloudTrailResult, error) {
-	results := make(chan *CloudTrailResult)
-	resultsInternal := make(chan *CloudTrailResult)
+func (m *CloudTrailEventsFinder) findEventsWithCloudTrail(ctx context.Context, detonation *detonators.DetonationInfo) (chan *LogEvent, error) {
+	results := make(chan *LogEvent)
+	resultsInternal := make(chan *LogEvent)
 
 	// findEventsWithCloudTrailAsync has a long-running for loop that will be stopped when the context is cancelled
 	// To achieve this, we "proxy" the results through another channel, and close it when the context is cancelled
@@ -88,7 +86,7 @@ func (m *CloudTrailEventsFinder) findEventsWithCloudTrail(ctx context.Context, d
 			case <-ctx.Done():
 				// Parent context cancelled
 				log.Debug("CloudTrailEventFinder identified that the parent context was cancelled, returning")
-				results <- &CloudTrailResult{Error: fmt.Errorf("parent context was cancelled: %w", ctx.Err())}
+				results <- &LogEvent{Error: fmt.Errorf("parent context was cancelled: %w", ctx.Err())}
 				return
 
 			case result, ok := <-resultsInternal:
@@ -104,7 +102,7 @@ func (m *CloudTrailEventsFinder) findEventsWithCloudTrail(ctx context.Context, d
 	return results, nil
 }
 
-func (m *CloudTrailEventsFinder) findEventsWithCloudTrailAsync(ctx context.Context, detonation *detonators.DetonationInfo, results chan *CloudTrailResult) {
+func (m *CloudTrailEventsFinder) findEventsWithCloudTrailAsync(ctx context.Context, detonation *detonators.DetonationInfo, results chan *LogEvent) {
 	defer close(results)
 
 	var allEvents = []map[string]interface{}{}
@@ -117,7 +115,7 @@ func (m *CloudTrailEventsFinder) findEventsWithCloudTrailAsync(ctx context.Conte
 	for time.Now().Before(deadline) {
 		events, err := m.lookupEvents(ctx, detonation)
 		if err != nil {
-			results <- &CloudTrailResult{Error: fmt.Errorf("unable to run CloudTrail LookupEvents: %w", err)}
+			results <- &LogEvent{Error: fmt.Errorf("unable to run CloudTrail LookupEvents: %w", err)}
 			return
 		}
 		if len(events) > 0 {
@@ -129,7 +127,7 @@ func (m *CloudTrailEventsFinder) findEventsWithCloudTrailAsync(ctx context.Conte
 				log.Debugf("Found %d new CloudTrail events", len(newEventsFound))
 				for _, newEvent := range newEventsFound {
 					log.Debug("Publishing new event to asynchronous channel")
-					results <- &CloudTrailResult{CloudTrailEvent: newEvent}
+					results <- &LogEvent{Event: newEvent}
 				}
 
 				// If we reached the max number of events to wait for, return as soon as possible
@@ -146,7 +144,7 @@ func (m *CloudTrailEventsFinder) findEventsWithCloudTrailAsync(ctx context.Conte
 	}
 
 	if len(allEvents) == 0 {
-		results <- &CloudTrailResult{Error: fmt.Errorf("timed out after %f seconds waiting for CloudTrail events", m.Options.Timeout.Seconds())}
+		results <- &LogEvent{Error: fmt.Errorf("timed out after %f seconds waiting for CloudTrail events", m.Options.Timeout.Seconds())}
 		return
 	}
 }
