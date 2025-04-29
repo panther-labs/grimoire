@@ -154,4 +154,4 @@ require (
 )
 
 //Run `make update-stratus` to update this automatically
-replace github.com/datadog/stratus-red-team/v2 => github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250328193115-a4645eefb9ec
+replace github.com/datadog/stratus-red-team/v2 => github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250429205003-a639d5c1f84c

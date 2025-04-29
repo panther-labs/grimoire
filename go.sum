@@ -253,8 +253,8 @@ github.com/onsi/ginkgo/v2 v2.17.2 h1:7eMhcy3GimbsA3hEnVKdw/PQM9XN9krpKVXsZdph0/g
 github.com/onsi/ginkgo/v2 v2.17.2/go.mod h1:nP2DPOQoNsQmsVyv5rDA8JkXQoCs6goXIvr/PRJ1eCc=
 github.com/onsi/gomega v1.33.1 h1:dsYjIxxSR755MDmKVsaFQTE22ChNBcuuTWgkUDSubOk=
 github.com/onsi/gomega v1.33.1/go.mod h1:U4R44UsT+9eLIaYRB2a5qajjtQYn0hauxvRm16AVYg0=
-github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250328193115-a4645eefb9ec h1:xqO5KPFKLbwizdOpwnCBRHyF7nltZQ+u2XG4l5B7APs=
-github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250328193115-a4645eefb9ec/go.mod h1:+vA3XK58ZyJAP/sc2NmenP5W3GvCF8oTmKxay08++S4=
+github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250429205003-a639d5c1f84c h1:sZi8Yjs5WMe05m0j9J+y9fq9m7flbmbwuEWOKq/KDow=
+github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250429205003-a639d5c1f84c/go.mod h1:BcDX+a7pcnUsXHgtVYW2EFNTIIBH9aw0Kcb+BXKMG7Y=
 github.com/pjbgf/sha1cd v0.3.0 h1:4D5XXmUUBUl/xQ6IjCkEAbqXskkq/4O7LmGn0AqMDs4=
 github.com/pjbgf/sha1cd v0.3.0/go.mod h1:nZ1rrWOcGJ5uZgEEVL1VUM9iRQiZvWdbZjkKyFzPPsI=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=
