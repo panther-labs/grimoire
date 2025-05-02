@@ -18,3 +18,4 @@ bin/
 
 .env
 *.json
+.DS_Store

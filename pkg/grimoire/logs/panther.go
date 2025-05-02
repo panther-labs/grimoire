@@ -303,10 +303,21 @@ func (f *PantherEventsFinder) executeQueryWithPolling(
 
 func (f *PantherEventsFinder) buildSQLQuery(startTime time.Time, detonation *detonators.DetonationInfo) string {
 	var conditions []string
-	if f.Options.UserAgentMatchType == UserAgentMatchTypePartial {
-		conditions = append(conditions, fmt.Sprintf("userAgent LIKE '%%%s%%'", detonation.DetonationID))
+
+	// Determine which userAgent field to use based on the table
+	var userAgentField string
+	if f.Options.TableName == "gcp_auditlog" {
+		userAgentField = "protoPayload:requestMetadata.callerSuppliedUserAgent"
 	} else {
-		conditions = append(conditions, fmt.Sprintf("(userAgent = '%s' OR userAgent = '[%s]')", detonation.DetonationID, detonation.DetonationID))
+		// Default to aws_cloudtrail field
+		userAgentField = "userAgent"
+	}
+
+	if f.Options.UserAgentMatchType == UserAgentMatchTypePartial {
+		conditions = append(conditions, fmt.Sprintf("%s LIKE '%%%s%%'", userAgentField, detonation.DetonationID))
+	} else {
+		conditions = append(conditions, fmt.Sprintf("(%s = '%s' OR %s = '[%s]' OR %s LIKE '%s%%')",
+			userAgentField, detonation.DetonationID, userAgentField, detonation.DetonationID, userAgentField, detonation.DetonationID))
 	}
 
 	// Handle IncludeEvents
@@ -365,12 +376,12 @@ func (f *PantherEventsFinder) buildAlertSQLQuery(detonation *detonators.Detonati
 	var userAgentCondition string
 	switch f.Options.UserAgentMatchType {
 	case UserAgentMatchTypeExact:
-		userAgentCondition = fmt.Sprintf("(data:userAgent = '%s' OR data:userAgent = '[%s]')", detonation.DetonationID, detonation.DetonationID)
+		userAgentCondition = fmt.Sprintf("(data:userAgent = '%s' OR data:userAgent = '[%s]') OR (data:protoPayload.requestMetadata.callerSuppliedUserAgent = '%s' OR data:protoPayload.requestMetadata.callerSuppliedUserAgent = '[%s]') OR data:protoPayload.requestMetadata.callerSuppliedUserAgent LIKE '%s%%'", detonation.DetonationID, detonation.DetonationID, detonation.DetonationID, detonation.DetonationID, detonation.DetonationID)
 	case UserAgentMatchTypePartial:
-		userAgentCondition = fmt.Sprintf("data:userAgent LIKE '%%%s%%'", detonation.DetonationID)
+		userAgentCondition = fmt.Sprintf("data:userAgent LIKE '%%%s%%' OR data:protoPayload.requestMetadata.callerSuppliedUserAgent LIKE '%%%s%%'", detonation.DetonationID, detonation.DetonationID)
 	default:
 		log.Warnf("Unknown UserAgentMatchType %v, defaulting to exact match", f.Options.UserAgentMatchType)
-		userAgentCondition = fmt.Sprintf("(data:userAgent = '%s' OR data:userAgent = '[%s]')", detonation.DetonationID, detonation.DetonationID)
+		userAgentCondition = fmt.Sprintf("(data:userAgent = '%s' OR data:userAgent = '[%s]') OR (data:protoPayload.requestMetadata.callerSuppliedUserAgent = '%s' OR data:protoPayload.requestMetadata.callerSuppliedUserAgent = '[%s]') OR data:protoPayload.requestMetadata.callerSuppliedUserAgent LIKE '%s%%'", detonation.DetonationID, detonation.DetonationID, detonation.DetonationID, detonation.DetonationID, detonation.DetonationID)
 	}
 
 	return fmt.Sprintf(`
