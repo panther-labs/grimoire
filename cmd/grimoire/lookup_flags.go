@@ -27,11 +27,6 @@ var (
 	pantherEndpoint  string
 	pantherApiToken  string
 	pantherTableName string
-
-	// GCP-specific flags
-	gcpCredentialsFile string
-	gcpProjectID       string
-	gcpRegion          string
 )
 
 // CLI flags shared between 'shell' and 'stratus-red-team' commands
