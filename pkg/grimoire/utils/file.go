@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 func CreateOrTruncateJSONFile(outputFile string) error {
@@ -54,4 +55,49 @@ func AppendToJsonFileArray(outputFile string, payload map[string]interface{}) er
 	}
 
 	return nil
+}
+
+// CreateLogFiles creates and initializes the log and alert files with the given timestamp and optional suffix
+// If outputDir is provided, files will be created inside that directory
+// If createAlertsFile is false, no alerts file will be created (returns empty string for alertsFile)
+func CreateLogFiles(outputDir, timestamp, suffix string, createAlertsFile bool) (string, string, error) {
+	var logsFilename, alertsFilename string
+
+	if suffix != "" {
+		logsFilename = fmt.Sprintf("%s_%s_logs.json", timestamp, suffix)
+		alertsFilename = fmt.Sprintf("%s_%s_alerts.json", timestamp, suffix)
+	} else {
+		logsFilename = fmt.Sprintf("%s_grimoire_logs.json", timestamp)
+		alertsFilename = fmt.Sprintf("%s_grimoire_alerts.json", timestamp)
+	}
+
+	// If outputDir is provided, create the directory if it doesn't exist
+	// and prepend the directory to the filenames
+	var logsFile, alertsFile string
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return "", "", fmt.Errorf("unable to create output directory %s: %v", outputDir, err)
+		}
+		logsFile = filepath.Join(outputDir, logsFilename)
+		alertsFile = filepath.Join(outputDir, alertsFilename)
+	} else {
+		logsFile = logsFilename
+		alertsFile = alertsFilename
+	}
+
+	// Initialize logs file
+	if err := CreateOrTruncateJSONFile(logsFile); err != nil {
+		return "", "", fmt.Errorf("failed to create logs file: %w", err)
+	}
+
+	// Initialize alerts file only if needed
+	if createAlertsFile {
+		if err := CreateOrTruncateJSONFile(alertsFile); err != nil {
+			return "", "", fmt.Errorf("failed to create alerts file: %w", err)
+		}
+	} else {
+		alertsFile = "" // Return empty string when no alerts file is created
+	}
+
+	return logsFile, alertsFile, nil
 }
