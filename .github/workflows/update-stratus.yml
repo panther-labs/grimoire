@@ -22,6 +22,7 @@ jobs:
 
       - name: Update Stratus Red Team
         run: make update-stratus
+        shell: bash
 
       - name: Check for changes in go.mod
         id: check-changes
