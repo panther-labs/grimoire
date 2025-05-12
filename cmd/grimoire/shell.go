@@ -249,6 +249,11 @@ func (m *ShellCommand) Do() error {
 		EndTime:      endTime,
 	}
 
+	// Clean up gcloud requirements before processing logs
+	if err := m.cleanupGCloudRequirements(); err != nil {
+		log.Debugf("Failed to cleanup gcloud requirements: %v", err)
+	}
+
 	// Process logs using the shared function
 	return FindLogsForDetonation(context.Background(), detonationInfo, "shell", "", logs.UserAgentMatchTypePartial, nil)
 }
