@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -98,11 +101,29 @@ func (m *ShellCommand) Do() error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(
-		os.Environ(),
+
+	// Get the modified startup script for ZDOTDIR
+	var zdotdir string
+	if m.isInteractiveMode() {
+		if startupScript, err := getModifiedShellStartupScript(); err == nil {
+			zdotdir = filepath.Dir(startupScript)
+			log.Debugf("Setting ZDOTDIR to %s", zdotdir)
+		} else {
+			log.Warnf("Failed to create modified startup script: %v", err)
+		}
+	}
+
+	// Set up environment variables
+	env := os.Environ()
+	env = append(env,
 		fmt.Sprintf("AWS_EXECUTION_ENV=%s", grimoireUserAgent),
 		fmt.Sprintf("GRIMOIRE_DETONATION_ID=%s", detonationUuid), // generic environment variable to allow the user to pass it further if needed
 	)
+	if zdotdir != "" {
+		env = append(env, fmt.Sprintf("ZDOTDIR=%s", zdotdir))
+	}
+	cmd.Env = env
+
 	if err := cmd.Run(); err != nil && m.isExecutionError(err) {
 		return fmt.Errorf("unable to run shell: %v", err)
 	}
@@ -134,6 +155,86 @@ func (m *ShellCommand) isExecutionError(err error) bool {
 	return true
 }
 
+// getModifiedShellStartupScript copies the user's shell startup script to a temporary file,
+// appends additional commands, and returns the path to the temporary file.
+func getModifiedShellStartupScript() (string, error) {
+	shell := os.Getenv("SHELL")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %v", err)
+	}
+
+	// Determine which startup script to use based on the shell
+	var startupScript string
+	switch {
+	case strings.Contains(shell, "zsh"):
+		startupScript = filepath.Join(homeDir, ".zshrc")
+	case strings.Contains(shell, "bash"):
+		startupScript = filepath.Join(homeDir, ".bashrc")
+		if _, err := os.Stat(startupScript); os.IsNotExist(err) {
+			// Try .bash_profile if .bashrc doesn't exist
+			startupScript = filepath.Join(homeDir, ".bash_profile")
+		}
+	default:
+		return "", fmt.Errorf("unsupported shell: %s", shell)
+	}
+
+	// Check if the startup script exists
+	if _, err := os.Stat(startupScript); os.IsNotExist(err) {
+		return "", fmt.Errorf("startup script not found: %s", startupScript)
+	}
+
+	// Create a temporary directory
+	tmpDir, err := os.MkdirTemp("", "grimoire-shell-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary directory: %v", err)
+	}
+
+	// Create .zshrc in the temporary directory
+	tmpFile := filepath.Join(tmpDir, ".zshrc")
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to create temporary file: %v", err)
+	}
+	defer f.Close()
+
+	// Copy the original startup script
+	originalFile, err := os.Open(startupScript)
+	if err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to open startup script: %v", err)
+	}
+	defer originalFile.Close()
+
+	if _, err := io.Copy(f, originalFile); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to copy startup script: %v", err)
+	}
+
+	// Append additional commands
+	additionalCommands := []string{
+		"",
+		"# Grimoire modifications",
+		"export PS1='(grimoire) '$PS1",
+		"",
+	}
+
+	if _, err := f.WriteString(strings.Join(additionalCommands, "\n")); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to append additional commands: %v", err)
+	}
+
+	// Make the temporary file executable
+	if err := os.Chmod(tmpFile, 0755); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to make temporary file executable: %v", err)
+	}
+
+	log.Infof("Created modified shell startup script at %s", tmpFile)
+	return tmpFile, nil
+}
+
 func (m *ShellCommand) getCommandToRun() (string, []string) {
 	shell := os.Getenv("SHELL")
 	if m.CommandToRun != "" {
@@ -141,7 +242,7 @@ func (m *ShellCommand) getCommandToRun() (string, []string) {
 	} else if m.ScriptToRun != "" {
 		return shell, []string{"-x", m.ScriptToRun}
 	} else {
-		return shell, []string{}
+		return shell, []string{"-i"}
 	}
 }
 
