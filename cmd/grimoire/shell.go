@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -62,7 +63,115 @@ func (m *ShellCommand) Validate() error {
 	return nil
 }
 
+// Modifies the gcloud config file to use the Grimoire user agent. Saves a copy of the original config file.
+func (m *ShellCommand) setupGCloudRequirements() error {
+	// Check if gcloud is installed and get its path
+	gcloudPath, err := exec.LookPath("gcloud")
+	if err != nil {
+		log.Debugf("gcloud is not installed: %v", err)
+		return nil
+	}
+
+	// Get the directory containing the gcloud executable
+	gcloudDir := filepath.Dir(gcloudPath)
+	// Navigate up one level from bin to get to the SDK root
+	sdkRoot := filepath.Dir(gcloudDir)
+	// Construct the path to the config file
+	configPath := filepath.Join(sdkRoot, "lib", "googlecloudsdk", "core", "config.json")
+	configOrigPath := configPath + ".orig"
+
+	// Check if config file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Debugf("gcloud config file not found at %s", configPath)
+		return nil
+	}
+
+	// Read the config file
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Debugf("Failed to read gcloud config file: %v", err)
+		return nil
+	}
+
+	// Create backup if it doesn't exist
+	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configOrigPath, configData, 0644); err != nil {
+			log.Debugf("Failed to create config backup: %v", err)
+			return nil
+		}
+	}
+
+	// Parse the JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal(configData, &config); err != nil {
+		log.Debugf("Failed to parse gcloud config file: %v", err)
+		return nil
+	}
+
+	// Set the user agent
+	config["user_agent"] = fmt.Sprintf("grimoire_%s", utils.NewDetonationID())
+
+	// Write back the modified config
+	modifiedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		log.Debugf("Failed to marshal modified config: %v", err)
+		return nil
+	}
+
+	if err := os.WriteFile(configPath, modifiedData, 0644); err != nil {
+		log.Debugf("Failed to write modified config: %v", err)
+		return nil
+	}
+
+	log.Debugf("Successfully modified gcloud config to use user agent: %s", config["user_agent"])
+	return nil
+}
+
+// Returns the gcloud config files to their original state.
+func (m *ShellCommand) cleanupGCloudRequirements() error {
+	// Check if gcloud is installed and get its path
+	gcloudPath, err := exec.LookPath("gcloud")
+	if err != nil {
+		log.Debugf("gcloud is not installed: %v", err)
+		return nil
+	}
+
+	// Get the directory containing the gcloud executable
+	gcloudDir := filepath.Dir(gcloudPath)
+	// Navigate up one level from bin to get to the SDK root
+	sdkRoot := filepath.Dir(gcloudDir)
+	// Construct the path to the config file
+	configPath := filepath.Join(sdkRoot, "lib", "googlecloudsdk", "core", "config.json")
+	configOrigPath := configPath + ".orig"
+
+	// Check if backup exists
+	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
+		log.Debugf("No backup config file found at %s", configOrigPath)
+		return nil
+	}
+
+	// Remove the modified config file
+	if err := os.Remove(configPath); err != nil {
+		log.Debugf("Failed to remove modified config file: %v", err)
+		return nil
+	}
+
+	// Rename the backup to the original name
+	if err := os.Rename(configOrigPath, configPath); err != nil {
+		log.Debugf("Failed to restore original config file: %v", err)
+		return nil
+	}
+
+	log.Debugf("Successfully restored original gcloud config file")
+	return nil
+}
+
 func (m *ShellCommand) Do() error {
+	if err := m.setupGCloudRequirements(); err != nil {
+		return err
+	}
+	defer m.cleanupGCloudRequirements()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
