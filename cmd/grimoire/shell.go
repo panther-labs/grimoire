@@ -24,11 +24,13 @@ import (
 type ShellCommand struct {
 	CommandToRun string
 	ScriptToRun  string
+	GCPUserAgent bool
 }
 
 func NewShellCommand() *cobra.Command {
 	var commandToRun string
 	var scriptToRun string
+	var gcpUserAgent bool
 
 	shellCmd := &cobra.Command{
 		Use:          "shell",
@@ -38,6 +40,7 @@ func NewShellCommand() *cobra.Command {
 			command := ShellCommand{
 				CommandToRun: commandToRun,
 				ScriptToRun:  scriptToRun,
+				GCPUserAgent: gcpUserAgent,
 			}
 			if err := command.Validate(); err != nil {
 				return err
@@ -52,6 +55,7 @@ func NewShellCommand() *cobra.Command {
 	initLookupFlags(shellCmd)
 	shellCmd.Flags().StringVarP(&commandToRun, "command", "c", "", "Command to execute in the shell (instead of running an interactive shell)")
 	shellCmd.Flags().StringVarP(&scriptToRun, "script", "", "", "Path to a script to execute in the shell (instead of running an interactive shell)")
+	shellCmd.Flags().BoolVar(&gcpUserAgent, "gcp-user-agent", false, "Modify the gcloud config file to use Grimoire's user agent")
 
 	return shellCmd
 }
@@ -93,14 +97,6 @@ func (m *ShellCommand) setupGCloudRequirements() error {
 		return nil
 	}
 
-	// Create backup if it doesn't exist
-	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
-		if err := os.WriteFile(configOrigPath, configData, 0644); err != nil {
-			log.Debugf("Failed to create config backup: %v", err)
-			return nil
-		}
-	}
-
 	// Parse the JSON
 	var config map[string]interface{}
 	if err := json.Unmarshal(configData, &config); err != nil {
@@ -108,8 +104,28 @@ func (m *ShellCommand) setupGCloudRequirements() error {
 		return nil
 	}
 
+	// Get the new user agent value
+	newUserAgent := fmt.Sprintf("grimoire_%s", utils.NewDetonationID())
+
+	// Check if the current user agent is different from what we want to set
+	currentUserAgent, exists := config["user_agent"]
+	if exists && currentUserAgent == newUserAgent {
+		log.Debugf("gcloud config already has the correct user agent: %s", newUserAgent)
+		return nil
+	}
+
+	// Create backup only if it doesn't exist and we're actually making a change
+	backupCreated := false
+	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configOrigPath, configData, 0644); err != nil {
+			log.Debugf("Failed to create config backup: %v", err)
+			return nil
+		}
+		backupCreated = true
+	}
+
 	// Set the user agent
-	config["user_agent"] = fmt.Sprintf("grimoire_%s", utils.NewDetonationID())
+	config["user_agent"] = newUserAgent
 
 	// Write back the modified config
 	modifiedData, err := json.MarshalIndent(config, "", "  ")
@@ -123,6 +139,12 @@ func (m *ShellCommand) setupGCloudRequirements() error {
 		return nil
 	}
 
+	// Warn the user about the config modification
+	log.Warnf("Modified gcloud config file: %s", configPath)
+	if backupCreated {
+		log.Warnf("Original config backed up to: %s", configOrigPath)
+	}
+	log.Warnf("Config will be restored when Grimoire exits")
 	log.Debugf("Successfully modified gcloud config to use user agent: %s", config["user_agent"])
 	return nil
 }
@@ -167,10 +189,12 @@ func (m *ShellCommand) cleanupGCloudRequirements() error {
 }
 
 func (m *ShellCommand) Do() error {
-	if err := m.setupGCloudRequirements(); err != nil {
-		return err
+	if m.GCPUserAgent {
+		if err := m.setupGCloudRequirements(); err != nil {
+			return err
+		}
+		defer m.cleanupGCloudRequirements()
 	}
-	defer m.cleanupGCloudRequirements()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sigChan := make(chan os.Signal, 1)
@@ -250,8 +274,10 @@ func (m *ShellCommand) Do() error {
 	}
 
 	// Clean up gcloud requirements before processing logs
-	if err := m.cleanupGCloudRequirements(); err != nil {
-		log.Debugf("Failed to cleanup gcloud requirements: %v", err)
+	if m.GCPUserAgent {
+		if err := m.cleanupGCloudRequirements(); err != nil {
+			log.Debugf("Failed to cleanup gcloud requirements: %v", err)
+		}
 	}
 
 	// Process logs using the shared function
