@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,11 +24,13 @@ import (
 type ShellCommand struct {
 	CommandToRun string
 	ScriptToRun  string
+	GCPUserAgent bool
 }
 
 func NewShellCommand() *cobra.Command {
 	var commandToRun string
 	var scriptToRun string
+	var gcpUserAgent bool
 
 	shellCmd := &cobra.Command{
 		Use:          "shell",
@@ -34,6 +40,7 @@ func NewShellCommand() *cobra.Command {
 			command := ShellCommand{
 				CommandToRun: commandToRun,
 				ScriptToRun:  scriptToRun,
+				GCPUserAgent: gcpUserAgent,
 			}
 			if err := command.Validate(); err != nil {
 				return err
@@ -48,6 +55,7 @@ func NewShellCommand() *cobra.Command {
 	initLookupFlags(shellCmd)
 	shellCmd.Flags().StringVarP(&commandToRun, "command", "c", "", "Command to execute in the shell (instead of running an interactive shell)")
 	shellCmd.Flags().StringVarP(&scriptToRun, "script", "", "", "Path to a script to execute in the shell (instead of running an interactive shell)")
+	shellCmd.Flags().BoolVar(&gcpUserAgent, "gcp-user-agent", false, "Modify the gcloud config file to use Grimoire's user agent")
 
 	return shellCmd
 }
@@ -59,7 +67,135 @@ func (m *ShellCommand) Validate() error {
 	return nil
 }
 
+// Modifies the gcloud config file to use the Grimoire user agent. Saves a copy of the original config file.
+func (m *ShellCommand) setupGCloudRequirements() error {
+	// Check if gcloud is installed and get its path
+	gcloudPath, err := exec.LookPath("gcloud")
+	if err != nil {
+		log.Debugf("gcloud is not installed: %v", err)
+		return nil
+	}
+
+	// Get the directory containing the gcloud executable
+	gcloudDir := filepath.Dir(gcloudPath)
+	// Navigate up one level from bin to get to the SDK root
+	sdkRoot := filepath.Dir(gcloudDir)
+	// Construct the path to the config file
+	configPath := filepath.Join(sdkRoot, "lib", "googlecloudsdk", "core", "config.json")
+	configOrigPath := configPath + ".orig"
+
+	// Check if config file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Debugf("gcloud config file not found at %s", configPath)
+		return nil
+	}
+
+	// Read the config file
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Debugf("Failed to read gcloud config file: %v", err)
+		return nil
+	}
+
+	// Parse the JSON
+	var config map[string]interface{}
+	if err := json.Unmarshal(configData, &config); err != nil {
+		log.Debugf("Failed to parse gcloud config file: %v", err)
+		return nil
+	}
+
+	// Get the new user agent value
+	newUserAgent := fmt.Sprintf("grimoire_%s", utils.NewDetonationID())
+
+	// Check if the current user agent is different from what we want to set
+	currentUserAgent, exists := config["user_agent"]
+	if exists && currentUserAgent == newUserAgent {
+		log.Debugf("gcloud config already has the correct user agent: %s", newUserAgent)
+		return nil
+	}
+
+	// Create backup only if it doesn't exist and we're actually making a change
+	backupCreated := false
+	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configOrigPath, configData, 0644); err != nil {
+			log.Debugf("Failed to create config backup: %v", err)
+			return nil
+		}
+		backupCreated = true
+	}
+
+	// Set the user agent
+	config["user_agent"] = newUserAgent
+
+	// Write back the modified config
+	modifiedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		log.Debugf("Failed to marshal modified config: %v", err)
+		return nil
+	}
+
+	if err := os.WriteFile(configPath, modifiedData, 0644); err != nil {
+		log.Debugf("Failed to write modified config: %v", err)
+		return nil
+	}
+
+	// Warn the user about the config modification
+	log.Warnf("Modified gcloud config file: %s", configPath)
+	if backupCreated {
+		log.Warnf("Original config backed up to: %s", configOrigPath)
+	}
+	log.Warnf("Config will be restored when Grimoire exits")
+	log.Debugf("Successfully modified gcloud config to use user agent: %s", config["user_agent"])
+	return nil
+}
+
+// Returns the gcloud config files to their original state.
+func (m *ShellCommand) cleanupGCloudRequirements() error {
+	// Check if gcloud is installed and get its path
+	gcloudPath, err := exec.LookPath("gcloud")
+	if err != nil {
+		log.Debugf("gcloud is not installed: %v", err)
+		return nil
+	}
+
+	// Get the directory containing the gcloud executable
+	gcloudDir := filepath.Dir(gcloudPath)
+	// Navigate up one level from bin to get to the SDK root
+	sdkRoot := filepath.Dir(gcloudDir)
+	// Construct the path to the config file
+	configPath := filepath.Join(sdkRoot, "lib", "googlecloudsdk", "core", "config.json")
+	configOrigPath := configPath + ".orig"
+
+	// Check if backup exists
+	if _, err := os.Stat(configOrigPath); os.IsNotExist(err) {
+		log.Debugf("No backup config file found at %s", configOrigPath)
+		return nil
+	}
+
+	// Remove the modified config file
+	if err := os.Remove(configPath); err != nil {
+		log.Debugf("Failed to remove modified config file: %v", err)
+		return nil
+	}
+
+	// Rename the backup to the original name
+	if err := os.Rename(configOrigPath, configPath); err != nil {
+		log.Debugf("Failed to restore original config file: %v", err)
+		return nil
+	}
+
+	log.Debugf("Successfully restored original gcloud config file")
+	return nil
+}
+
 func (m *ShellCommand) Do() error {
+	if m.GCPUserAgent {
+		if err := m.setupGCloudRequirements(); err != nil {
+			return err
+		}
+		defer m.cleanupGCloudRequirements()
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -98,11 +234,29 @@ func (m *ShellCommand) Do() error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(
-		os.Environ(),
+
+	// Get the modified startup script for ZDOTDIR
+	var zdotdir string
+	if m.isInteractiveMode() {
+		if startupScript, err := getModifiedShellStartupScript(); err == nil {
+			zdotdir = filepath.Dir(startupScript)
+			log.Debugf("Setting ZDOTDIR to %s", zdotdir)
+		} else {
+			log.Warnf("Failed to create modified startup script: %v", err)
+		}
+	}
+
+	// Set up environment variables
+	env := os.Environ()
+	env = append(env,
 		fmt.Sprintf("AWS_EXECUTION_ENV=%s", grimoireUserAgent),
 		fmt.Sprintf("GRIMOIRE_DETONATION_ID=%s", detonationUuid), // generic environment variable to allow the user to pass it further if needed
 	)
+	if zdotdir != "" {
+		env = append(env, fmt.Sprintf("ZDOTDIR=%s", zdotdir))
+	}
+	cmd.Env = env
+
 	if err := cmd.Run(); err != nil && m.isExecutionError(err) {
 		return fmt.Errorf("unable to run shell: %v", err)
 	}
@@ -117,6 +271,13 @@ func (m *ShellCommand) Do() error {
 		DetonationID: detonationUuid,
 		StartTime:    startTime,
 		EndTime:      endTime,
+	}
+
+	// Clean up gcloud requirements before processing logs
+	if m.GCPUserAgent {
+		if err := m.cleanupGCloudRequirements(); err != nil {
+			log.Debugf("Failed to cleanup gcloud requirements: %v", err)
+		}
 	}
 
 	// Process logs using the shared function
@@ -134,6 +295,86 @@ func (m *ShellCommand) isExecutionError(err error) bool {
 	return true
 }
 
+// getModifiedShellStartupScript copies the user's shell startup script to a temporary file,
+// appends additional commands, and returns the path to the temporary file.
+func getModifiedShellStartupScript() (string, error) {
+	shell := os.Getenv("SHELL")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %v", err)
+	}
+
+	// Determine which startup script to use based on the shell
+	var startupScript string
+	switch {
+	case strings.Contains(shell, "zsh"):
+		startupScript = filepath.Join(homeDir, ".zshrc")
+	case strings.Contains(shell, "bash"):
+		startupScript = filepath.Join(homeDir, ".bashrc")
+		if _, err := os.Stat(startupScript); os.IsNotExist(err) {
+			// Try .bash_profile if .bashrc doesn't exist
+			startupScript = filepath.Join(homeDir, ".bash_profile")
+		}
+	default:
+		return "", fmt.Errorf("unsupported shell: %s", shell)
+	}
+
+	// Check if the startup script exists
+	if _, err := os.Stat(startupScript); os.IsNotExist(err) {
+		return "", fmt.Errorf("startup script not found: %s", startupScript)
+	}
+
+	// Create a temporary directory
+	tmpDir, err := os.MkdirTemp("", "grimoire-shell-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary directory: %v", err)
+	}
+
+	// Create .zshrc in the temporary directory
+	tmpFile := filepath.Join(tmpDir, ".zshrc")
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to create temporary file: %v", err)
+	}
+	defer f.Close()
+
+	// Copy the original startup script
+	originalFile, err := os.Open(startupScript)
+	if err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to open startup script: %v", err)
+	}
+	defer originalFile.Close()
+
+	if _, err := io.Copy(f, originalFile); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to copy startup script: %v", err)
+	}
+
+	// Append additional commands
+	additionalCommands := []string{
+		"",
+		"# Grimoire modifications",
+		"export PS1='(grimoire) '$PS1",
+		"",
+	}
+
+	if _, err := f.WriteString(strings.Join(additionalCommands, "\n")); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to append additional commands: %v", err)
+	}
+
+	// Make the temporary file executable
+	if err := os.Chmod(tmpFile, 0755); err != nil {
+		os.RemoveAll(tmpDir) // Clean up the temp directory
+		return "", fmt.Errorf("failed to make temporary file executable: %v", err)
+	}
+
+	log.Infof("Created modified shell startup script at %s", tmpFile)
+	return tmpFile, nil
+}
+
 func (m *ShellCommand) getCommandToRun() (string, []string) {
 	shell := os.Getenv("SHELL")
 	if m.CommandToRun != "" {
@@ -141,7 +382,7 @@ func (m *ShellCommand) getCommandToRun() (string, []string) {
 	} else if m.ScriptToRun != "" {
 		return shell, []string{"-x", m.ScriptToRun}
 	} else {
-		return shell, []string{}
+		return shell, []string{"-i"}
 	}
 }
 
