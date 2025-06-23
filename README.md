@@ -20,7 +20,7 @@ This fork enhances Grimoire with **end-to-end integration testing for detection 
 
 > 📺 **Learn More**: Watch the talk "Incorporating End to End Integration Testing into your Detection Engineering Workflow" at [Open Cloud Security Conference](https://youtu.be/4Ijyc2JW-3w) (short version) or BSides Boulder (full version - link TBD)
 
-### Key Benefits
+## Key benefits
 
 - **Real Attack Simulation**: Uses [Stratus Red Team](https://github.com/panther-labs/stratus-red-team) (Panther fork) to generate genuine log patterns, not synthetic test data
 - **Complete Pipeline Testing**: Validates detection logic AND alerting infrastructure from log ingestion to alert delivery
