@@ -1,9 +1,3 @@
-# Grimoire
-
-<p align="center">
-  <img src="./logo.png" alt="logo" width="300" />
-</p>
-
 # Panther-enhanced fork of Grimoire
 
 [Grimoire](https://github.com/dataDog/grimoire) is an interactive shell ("REPL") for detection engineering that allows you to generate datasets of cloud audit logs for common attack techniques. It currently supports AWS.
