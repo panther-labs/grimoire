@@ -31,7 +31,8 @@ This fork enhances Grimoire with **end-to-end integration testing for detection 
 
 ## Panther integration features
 
-**New Log Source**: Query Panther's data lake via GraphQL API instead of AWS CloudTrail
+### New log source
+Query Panther's data lake via GraphQL API instead of AWS CloudTrail:
 - Retrieve both raw events and security alerts in one operation
 - Access extended retention through Panther's data lake
 - Leverage existing Panther infrastructure
