@@ -29,7 +29,7 @@ This fork enhances Grimoire with **end-to-end integration testing for detection 
 
 > 📺 **Learn more**: Watch the "Incorporating End to End Integration Testing into your Detection Engineering Workflow" talk given at [Open Cloud Security Conference](https://youtu.be/4Ijyc2JW-3w) (short version) or BSides Boulder (full version - link TBD)
 
-### Panther Integration Features
+## Panther integration features
 
 **New Log Source**: Query Panther's data lake via GraphQL API instead of AWS CloudTrail
 - Retrieve both raw events and security alerts in one operation
