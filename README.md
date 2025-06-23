@@ -14,11 +14,6 @@ This repository is a Panther-enhanced fork of Grimoire that adds **end-to-end in
   <img src="./logo.png" alt="logo" width="300" />
 </p>
 
-## Panther Labs Integration
-
-This fork enhances Grimoire with **end-to-end integration testing for detection engineering**. Instead of relying on crafted test cases that may not match real-world log patterns, Grimoire generates authentic attack data and validates your entire detection pipeline.
-
-> 📺 **Learn More**: Watch the talk "Incorporating End to End Integration Testing into your Detection Engineering Workflow" at [Open Cloud Security Conference](https://youtu.be/4Ijyc2JW-3w) (short version) or BSides Boulder (full version - link TBD)
 
 ## Key benefits
 
