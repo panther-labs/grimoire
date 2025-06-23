@@ -38,7 +38,7 @@ Query Panther's data lake via GraphQL API instead of AWS CloudTrail:
 - `--panther-api-token` - API authentication token
 - `--panther-table` - Table to query (default: "aws_cloudtrail")
 
-### Usage with Panther
+## Configuration setup
 
 ```bash
 # Direct configuration
