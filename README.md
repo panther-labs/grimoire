@@ -4,7 +4,15 @@
   <img src="./logo.png" alt="logo" width="300" />
 </p>
 
-Grimoire is a "REPL for detection engineering" that allows you to generate datasets of cloud audit logs for common attack techniques. It currently supports AWS.
+# Panther-enhanced fork of Grimoire
+
+[Grimoire](https://github.com/dataDog/grimoire) is an interactive shell ("REPL") for detection engineering that allows you to generate datasets of cloud audit logs for common attack techniques. It currently supports AWS.
+
+This repository is a Panther-enhanced fork of Grimoire that adds **end-to-end integration testing for detection engineering**. Instead of using fabricated test cases that may not match real-world log patterns, you can use this fork to generate authentic attack data, allowing for better adversary simulation and detection pipeline validation.
+
+<p align="center">
+  <img src="./logo.png" alt="logo" width="300" />
+</p>
 
 ## Panther Labs Integration
 
