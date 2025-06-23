@@ -25,7 +25,9 @@ This fork enhances Grimoire with **end-to-end integration testing for detection 
 - **Real attack simulation**: Uses the [Panther Stratus Red Team fork](https://github.com/panther-labs/stratus-red-team) to generate genuine log patterns, not synthetic test data
 - **Complete pipeline testing**: Validates detection logic _and_ alerting infrastructure, from log ingestion to alert delivery
 - **Alert correlation**: Correlates CloudTrail events with Panther security alerts to verify detection coverage
-- **Technique Validation**: Confirms whether attack techniques trigger expected Panther detections
+- **Technique validation**: Confirms whether attack techniques trigger expected Panther detections
+
+> 📺 **Learn more**: Watch the "Incorporating End to End Integration Testing into your Detection Engineering Workflow" talk given at [Open Cloud Security Conference](https://youtu.be/4Ijyc2JW-3w) (short version) or BSides Boulder (full version - link TBD)
 
 ### Panther Integration Features
 
