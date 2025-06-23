@@ -37,7 +37,7 @@ Query Panther's data lake via GraphQL API instead of AWS CloudTrail:
 - Access extended retention through Panther's data lake
 - Leverage existing Panther infrastructure
 
-**Configuration**:
+### Configuration
 - `--log-source panther` - Use Panther backend
 - `--panther-api-host` - Your Panther GraphQL endpoint  
 - `--panther-api-token` - API authentication token
