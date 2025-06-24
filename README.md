@@ -1,10 +1,52 @@
-# Grimoire
+# Panther-enhanced fork of Grimoire
+
+[Grimoire](https://github.com/dataDog/grimoire) is an interactive shell ("REPL") for detection engineering that allows you to generate datasets of cloud audit logs for common attack techniques. It currently supports AWS.
+
+This repository is a Panther-enhanced fork of Grimoire that adds **end-to-end integration testing for detection engineering**. Instead of using fabricated test cases that may not match real-world log patterns, you can use this fork to generate authentic attack data, allowing for better adversary simulation and detection pipeline validation.
 
 <p align="center">
   <img src="./logo.png" alt="logo" width="300" />
 </p>
 
-Grimoire is a "REPL for detection engineering" that allows you to generate datasets of cloud audit logs for common attack techniques. It currently supports AWS.
+
+## Key benefits
+
+- **Real attack simulation**: Uses the [Panther Stratus Red Team fork](https://github.com/panther-labs/stratus-red-team) to generate genuine log patterns, not synthetic test data
+- **Complete pipeline testing**: Validates detection logic _and_ alerting infrastructure, from log ingestion to alert delivery
+- **Alert correlation**: Correlates CloudTrail events with Panther security alerts to verify detection coverage
+- **Technique validation**: Confirms whether attack techniques trigger expected Panther detections
+
+> 📺 **Learn more**: Watch the "Incorporating End to End Integration Testing into your Detection Engineering Workflow" talk given at [Open Cloud Security Conference](https://youtu.be/4Ijyc2JW-3w) (short version) or BSides Boulder (full version - link TBD)
+
+## Panther integration features
+
+### New log source
+Query Panther's data lake via GraphQL API instead of AWS CloudTrail:
+- Retrieve both raw events and security alerts in one operation
+- Access extended retention through Panther's data lake
+- Leverage existing Panther infrastructure
+
+### Configuration
+- `--log-source panther` - Use Panther backend
+- `--panther-api-host` - Your Panther GraphQL endpoint  
+- `--panther-api-token` - API authentication token
+- `--panther-table` - Table to query (default: "aws_cloudtrail")
+
+## Configuration setup
+
+```bash
+# Direct configuration
+grimoire stratus-red-team \
+  --attack-technique aws.credential-access.ssm-retrieve-securestring-parameters \
+  --log-source panther \
+  --panther-api-host https://api.your-panther-instance.com/public-api \
+  --panther-api-token your-api-token
+
+# Using environment file
+cp .env.example .env
+# Edit .env with your credentials
+grimoire stratus-red-team --attack-technique aws.persistence.iam-create-admin-user
+```
 
 <p align="center">
   <a href="https://github.com/DataDog/grimoire/raw/main/stratus-red-team.png">
@@ -24,11 +66,12 @@ Grimoire is a "REPL for detection engineering" that allows you to generate datas
 First, Grimoire detonates an attack. It injects a unique user agent containing a UUID. Then, it polls CloudTrail to retrieve the audit logs caused by the detonation, and streams the resulting logs to an output file or to your terminal.
 
 Supported detonators:
-- [Stratus Red Team](https://github.com/DataDog/stratus-red-team)
+- [Stratus Red Team](https://github.com/panther-labs/stratus-red-team) (Panther Labs fork with custom techniques)
 - AWS CLI interactive shell
 
-Supported logs backend:
+Supported logs backends:
 - AWS CloudTrail (through the `LookupEvents` API)
+- Panther SIEM (through GraphQL API with alert correlation)
 
 ## Installation
 
