@@ -16,6 +16,10 @@
 .idea
 bin/
 
+# Alert info Output
+/output/
+
+# Misc
 .env
 *.json
 .DS_Store
