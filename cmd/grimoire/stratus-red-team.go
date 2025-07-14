@@ -4,24 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
-	"github.com/datadog/grimoire/pkg/grimoire/detonators"
-	"github.com/datadog/grimoire/pkg/grimoire/logs"
-	utils "github.com/datadog/grimoire/pkg/grimoire/utils"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/datadog/grimoire/pkg/grimoire/detonators"
+	"github.com/datadog/grimoire/pkg/grimoire/logs"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 type StratusRedTeamCommand struct {
 	StratusRedTeamDetonator *detonators.StratusRedTeamDetonator
-	OutputFile              string
 	cleanupWg               sync.WaitGroup
 	cleanupMutex            sync.Mutex
 	cleanupRunning          atomic.Bool
@@ -34,7 +31,6 @@ type StratusRedTeamCommand struct {
 
 func NewStratusRedTeamCommand() *cobra.Command {
 	var stratusRedTeamAttackTechnique string
-	var outputFile string
 
 	stratusRedTeamCommand := &cobra.Command{
 		Use:          "stratus-red-team",
@@ -50,39 +46,21 @@ func NewStratusRedTeamCommand() *cobra.Command {
 			}
 			command := StratusRedTeamCommand{
 				StratusRedTeamDetonator: detonator,
-				OutputFile:              outputFile,
+			}
+			if err := ValidateFlags(); err != nil {
+				return err
 			}
 			return command.Do()
 		},
 	}
 
 	stratusRedTeamCommand.Flags().StringVarP(&stratusRedTeamAttackTechnique, "attack-technique", "", "", "Stratus Red Team attack technique to detonate. Use 'stratus list' to list available attack techniques or browse https://stratus-red-team.cloud/attack-techniques/list/.")
-	stratusRedTeamCommand.Flags().StringVarP(&outputFile, "output", "o", "", "Output file to write CloudTrail events to. Grimoire will overwrite the file if it exists, and create otherwise.")
 	initLookupFlags(stratusRedTeamCommand)
 
 	return stratusRedTeamCommand
 }
 
 func (m *StratusRedTeamCommand) Do() error {
-	awsConfig, _ := config.LoadDefaultConfig(context.Background())
-	cloudtrailLogs := &logs.CloudTrailEventsFinder{
-		CloudtrailClient: cloudtrail.NewFromConfig(awsConfig),
-		Options: &logs.CloudTrailEventLookupOptions{
-			Timeout:            timeout,
-			LookupInterval:     lookupInterval,
-			IncludeEvents:      includeEvents,
-			ExcludeEvents:      excludeEvents,
-			MaxEvents:          maxEvents,
-			WriteEventsOnly:    writeEventsOnly,
-			ExtendTimeWindow:   extendSearchWindow,
-			UserAgentMatchType: logs.UserAgentMatchTypeExact,
-		},
-	}
-
-	if err := utils.CreateOrTruncateJSONFile(m.OutputFile); err != nil {
-		return err
-	}
-
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	defer m.cancel()
 
@@ -104,35 +82,11 @@ func (m *StratusRedTeamCommand) Do() error {
 
 	log.Info("Stratus Red Team attack technique successfully detonated")
 
-	log.Info("Searching for CloudTrail events...")
-	results, detonationErr := cloudtrailLogs.FindLogs(m.ctx, detonation)
-	if detonationErr != nil {
-		return detonationErr
-	}
+	// Set the expected technique ID for reporting
+	techniqueID := m.StratusRedTeamDetonator.AttackTechnique.ID
 
-	errorChan := make(chan error)
-
-	// Main processing loop that consumes events and streams them out
-	go m.processingLoop(results, errorChan)
-
-	// Wait for event processing to be done, either due to a Ctrl+C either due to normal exit conditions
-	log.Debugf("Waiting for event processing to be done")
-	err := <-errorChan
-	log.Debugf("Event processing done, received a result from the error channel")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (m *StratusRedTeamCommand) handleNewEvent(event *map[string]interface{}) error {
-	log.Printf("Found new CloudTrail event generated on %s UTC: %s", (*event)["eventTime"], utils.GetCloudTrailEventFullName(event))
-	err := utils.AppendToJsonFileArray(m.OutputFile, *event)
-	if err != nil {
-		return fmt.Errorf("unable to write CloudTrail event to %s: %v", m.OutputFile, err)
-	}
-	return nil
+	// Use the shared function for log processing
+	return FindLogsForDetonation(m.ctx, detonation, m.StratusRedTeamDetonator.AttackTechnique.String(), techniqueID, logs.UserAgentMatchTypeExact, m.cancel)
 }
 
 func (m *StratusRedTeamCommand) CleanupDetonation() error {
@@ -208,45 +162,6 @@ func (m *StratusRedTeamCommand) cleanupRoutineAsync() {
 		log.Debug("Asynchronous cleanup failed, will retry at the end of the program")
 		if strings.Contains(err.Error(), "interrupts received") {
 			log.Debug("The failure was caused by the Go terraform wrapper catching signals and panicking")
-		}
-	}
-}
-
-func (m *StratusRedTeamCommand) processingLoop(results <-chan *logs.CloudTrailResult, errorChan chan error) {
-	for {
-		select {
-
-		// Case 1: New CloudTrail result found
-		case evt, ok := <-results:
-			if !ok {
-				log.Debugf("channel closed")
-				errorChan <- nil
-				return // Channel closed, exit the processing loop
-			}
-
-			// If it's an error, we exit the processing loop and ultimately exit
-			if evt.Error != nil {
-				log.Printf("Error processing event: %v", evt.Error)
-				m.cancel()
-				errorChan <- evt.Error
-				return
-			}
-
-			// Otherwise, we call handleNewEvent which will stream the newly-found event appropriately
-			if err := m.handleNewEvent(evt.CloudTrailEvent); err != nil {
-				// If processing of this event fails, we abort execution
-				log.Errorf(err.Error())
-				m.cancel()
-				errorChan <- err
-				return
-			}
-
-			// We don't return here, this is the happy path where the processing loop continues
-
-		case <-m.ctx.Done():
-			log.Debug("Stopping event processing due to context cancellation")
-			errorChan <- nil
-			return
 		}
 	}
 }

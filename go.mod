@@ -12,6 +12,8 @@ require (
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/datadog/stratus-red-team/v2 v2.16.0
 	github.com/google/uuid v1.6.0
+	github.com/hasura/go-graphql-client v0.13.1
+	github.com/joho/godotenv v1.5.1
 	github.com/sirupsen/logrus v1.4.1
 	github.com/spf13/cobra v1.6.0
 	github.com/stretchr/testify v1.10.0
@@ -65,7 +67,8 @@ require (
 	github.com/aws/smithy-go v1.22.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cjlapao/common-go v0.0.39 // indirect
-	github.com/cloudflare/circl v1.3.7 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
+	github.com/coder/websocket v1.8.12 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -76,7 +79,7 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
@@ -154,4 +157,4 @@ require (
 )
 
 //Run `make update-stratus` to update this automatically
-replace github.com/datadog/stratus-red-team/v2 => github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250429205003-a639d5c1f84c
+replace github.com/datadog/stratus-red-team/v2 => github.com/panther-labs/stratus-red-team/v2 v2.0.0-20250501152813-a1c0701a6601
