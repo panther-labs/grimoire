@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hasura/go-graphql-client v0.13.1
 	github.com/joho/godotenv v1.5.1
-	github.com/sirupsen/logrus v1.4.1
+	github.com/sirupsen/logrus v1.8.3
 	github.com/spf13/cobra v1.6.0
 	github.com/stretchr/testify v1.10.0
 )
@@ -96,7 +96,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.1 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/microsoft/kiota-abstractions-go v1.7.0 // indirect
